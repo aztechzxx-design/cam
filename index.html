@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Hand Gesture Particle</title>
+
+<style>
+*{
+    box-sizing:border-box;
+    margin:0;
+    padding:0;
+}
+
+html,body{
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#000;
+    color:#fff;
+    font-family:Arial,sans-serif;
+}
+
+.app{
+    width:100%;
+    height:100%;
+    padding:12px;
+    display:flex;
+    gap:12px;
+}
+
+.camera{
+    width:32%;
+    position:relative;
+    overflow:hidden;
+    border-radius:15px;
+    border:1px solid #252525;
+    background:#080808;
+}
+
+#video{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    transform:scaleX(-1);
+}
+
+.camera-title,
+.status{
+    position:absolute;
+    padding:9px 12px;
+    border-radius:7px;
+    background:rgba(0,0,0,.72);
+    font-size:10px;
+    letter-spacing:1.5px;
+}
+
+.camera-title{
+    top:12px;
+    left:12px;
+}
+
+.status{
+    bottom:12px;
+    left:12px;
+    color:#ff9635;
+}
+
+.particles{
+    flex:1;
+    position:relative;
+    overflow:hidden;
+    border-radius:15px;
+    border:1px solid #202020;
+    background:#000;
+}
+
+#canvas{
+    width:100%;
+    height:100%;
+    display:block;
+}
+
+.info{
+    position:absolute;
+    top:18px;
+    left:20px;
+    pointer-events:none;
+}
+
+.info h1{
+    font-size:14px;
+    letter-spacing:4px;
+}
+
+.info p{
+    margin-top:6px;
+    color:#555;
+    font-size:9px;
+    letter-spacing:2px;
+}
+
+.gesture{
+    position:absolute;
+    right:18px;
+    bottom:18px;
+    padding:10px 14px;
+    border-radius:8px;
+    border:1px solid #292929;
+    background:rgba(0,0,0,.72);
+    color:#ff9635;
+    font-size:10px;
+    letter-spacing:1.5px;
+}
+
+@media(max-width:800px){
+
+    .app{
+        flex-direction:column;
+    }
+
+    .camera{
+        width:100%;
+        height:38%;
+    }
+
+    .particles{
+        height:62%;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="app">
+
+    <div class="camera">
+
+        <video
+            id="video"
+            autoplay
+            muted
+            playsinline>
+        </video>
+
+        <div class="camera-title">
+            HAND CAMERA
+        </div>
+
+        <div
+            id="status"
+            class="status">
+            STARTING CAMERA...
+        </div>
+
+    </div>
+
+
+    <div class="particles">
+
+        <canvas id="canvas"></canvas>
+
+        <div class="info">
+            <h1>HAND PARTICLES</h1>
+            <p>GESTURE CONTROL</p>
+        </div>
+
+        <div
+            id="gesture"
+            class="gesture">
+            NO HAND
+        </div>
+
+    </div>
+
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
+
+<script>
+
+/* =====================================================
+   ELEMENT
+===================================================== */
+
+const video =
+    document.getElementById("video");
+
+const canvas =
+    document.getElementById("canvas");
+
+const ctx =
+    canvas.getContext("2d");
+
+const status =
+    document.getElementById("status");
+
+const gestureLabel =
+    document.getElementById("gesture");
+
+
+/* =====================================================
+   CANVAS
+===================================================== */
+
+let W = 800;
+let H = 600;
+
+function resize(){
+
+    const rect =
+        canvas.getBoundingClientRect();
+
+    W = rect.width;
+    H = rect.height;
+
+    canvas.width =
+        Math.floor(W * devicePixelRatio);
+
+    canvas.height =
+        Math.floor(H * devicePixelRatio);
+
+    ctx.setTransform(
+        devicePixelRatio,
+        0,
+        0,
+        devicePixelRatio,
+        0,
+        0
+    );
+}
+
+window.addEventListener(
+    "resize",
+    resize
+);
+
+resize();
+
+
+/* =====================================================
+   SETTINGS
+===================================================== */
+
+const PARTICLE_COUNT = 5500;
+
+const particles = [];
+
+let currentShape = "NONE";
+
+let handDetected = false;
+
+let handX = W / 2;
+let handY = H / 2;
+
+let targetHandX = W / 2;
+let targetHandY = H / 2;
+
+
+/* Gesture */
+
+let lastGesture = null;
+let gestureFrames = 0;
+
+const REQUIRED_FRAMES = 1;
+
+let lastShapeChange = 0;
+
+const SHAPE_COOLDOWN = 100;
+
+
+/* Shapes */
+
+let heartPoints = [];
+let textPoints = [];
+
+
+/* =====================================================
+   TEXT CREATOR
+===================================================== */
+
+function createText(text){
+
+    const c =
+        document.createElement("canvas");
+
+    const cctx =
+        c.getContext("2d");
+
+    c.width = 1400;
+    c.height = 500;
+
+    cctx.clearRect(
+        0,
+        0,
+        c.width,
+        c.height
+    );
+
+
+    let fontSize = 175;
+
+    if(text.length > 10){
+        fontSize = 125;
+    }
+
+    if(text.length > 14){
+        fontSize = 105;
+    }
+
+
+    cctx.font =
+        `900 ${fontSize}px Arial`;
+
+    cctx.textAlign =
+        "center";
+
+    cctx.textBaseline =
+        "middle";
+
+    cctx.fillStyle =
+        "#fff";
+
+
+    cctx.fillText(
+        text,
+        700,
+        250
+    );
+
+
+    const image =
+        cctx.getImageData(
+            0,
+            0,
+            1400,
+            500
+        );
+
+
+    const points = [];
+
+    /*
+       Sampling kecil = huruf lebih jelas
+    */
+
+    const gap = 4;
+
+
+    for(
+        let y = 0;
+        y < 500;
+        y += gap
+    ){
+
+        for(
+            let x = 0;
+            x < 1400;
+            x += gap
+        ){
+
+            const i =
+                (y * 1400 + x) * 4;
+
+
+            if(
+                image.data[i + 3] > 100
+            ){
+
+                points.push({
+                    x:x,
+                    y:y
+                });
+
+            }
+        }
+    }
+
+
+    return points;
+}
+
+
+/* =====================================================
+   HEART
+===================================================== */
+
+function createHeart(){
+
+    const points = [];
+
+    for(
+        let i = 0;
+        i < 14000;
+        i++
+    ){
+
+        const t =
+            Math.random() *
+            Math.PI * 2;
+
+        const r =
+            Math.sqrt(
+                Math.random()
+            );
+
+
+        const x =
+            16 *
+            Math.pow(
+                Math.sin(t),
+                3
+            );
+
+
+        const y =
+            13 * Math.cos(t)
+            - 5 * Math.cos(2*t)
+            - 2 * Math.cos(3*t)
+            - Math.cos(4*t);
+
+
+        points.push({
+            x:x*r,
+            y:-y*r
+        });
+    }
+
+    return points;
+}
+
+heartPoints =
+    createHeart();
+
+
+/* =====================================================
+   SET SHAPE
+===================================================== */
+
+function setShape(shape){
+
+    currentShape =
+        shape;
+
+
+    if(shape === "HEART"){
+
+        gestureLabel.innerText =
+            "☝ HEART";
+
+    }
+
+    else if(shape === "I LOVE YOU"){
+
+        textPoints =
+            createText("I LOVE YOU");
+
+        gestureLabel.innerText =
+            "✋ I LOVE YOU";
+
+    }
+
+    else if(shape === "JEDUD"){
+
+        textPoints =
+            createText("JEDUD");
+
+        gestureLabel.innerText =
+            "✊ JEDUD";
+
+    }
+
+    else if(shape === "I MISSS YOU"){
+
+        textPoints =
+            createText("I MISSS YOU");
+
+        gestureLabel.innerText =
+            "✌ I MISSS YOU";
+
+    }
+
+    else{
+
+        gestureLabel.innerText =
+            "NO HAND";
+
+    }
+}
+
+
+/* =====================================================
+   PARTICLE
+===================================================== */
+
+class Particle{
+
+    constructor(index){
+
+        this.index =
+            index;
+
+
+        this.x =
+            Math.random() * W;
+
+        this.y =
+            Math.random() * H;
+
+
+        this.vx = 0;
+        this.vy = 0;
+
+
+        this.size =
+            Math.random() * 1.15 + .45;
+
+
+        this.alpha =
+            Math.random() * .55 + .45;
+
+
+        this.seed =
+            Math.random() * 10000;
+
+
+        /*
+           Posisi spread tetap
+        */
+
+        this.spreadX =
+            Math.random() * W;
+
+        this.spreadY =
+            Math.random() * H;
+    }
+
+
+    update(){
+
+        let tx;
+        let ty;
+
+
+        /* ==========================================
+           NO HAND
+        ========================================== */
+
+        if(!handDetected){
+
+            tx =
+                this.spreadX;
+
+            ty =
+                this.spreadY;
+
+
+            this.vx +=
+                (tx - this.x) * .0015;
+
+            this.vy +=
+                (ty - this.y) * .0015;
+
+        }
+
+
+        /* ==========================================
+           HAND
+        ========================================== */
+
+        else{
+
+            /* HEART */
+
+            if(
+                currentShape === "HEART"
+            ){
+
+                const p =
+                    heartPoints[
+                        this.index %
+                        heartPoints.length
+                    ];
+
+
+                tx =
+                    W / 2 +
+                    p.x *
+                    Math.min(W,H) *
+                    .037;
+
+
+                ty =
+                    H / 2 +
+                    p.y *
+                    Math.min(W,H) *
+                    .037;
+
+            }
+
+
+            /* TEXT */
+
+            else{
+
+                const p =
+                    textPoints[
+                        this.index %
+                        textPoints.length
+                    ];
+
+
+                if(p){
+
+                    tx =
+                        W / 2 +
+                        (p.x - 700) *
+                        Math.min(W,H) /
+                        720;
+
+
+                    ty =
+                        H / 2 +
+                        (p.y - 250) *
+                        Math.min(W,H) /
+                        720;
+
+                }
+
+                else{
+
+                    tx = W / 2;
+                    ty = H / 2;
+
+                }
+            }
+
+
+            /* ======================================
+               TARIK KE BENTUK
+            ====================================== */
+
+            this.vx +=
+                (tx - this.x) *
+                .075;
+
+            this.vy +=
+                (ty - this.y) *
+                .075;
+
+
+            /* ======================================
+               EFEK TANGAN
+               
+               TIDAK ADA BUBBLE.
+               Hanya sedikit dorongan partikel.
+            ====================================== */
+
+            const dx =
+                this.x - handX;
+
+            const dy =
+                this.y - handY;
+
+            const d =
+                Math.sqrt(
+                    dx*dx + dy*dy
+                );
+
+
+            const radius = 100;
+
+
+            if(
+                d < radius
+            ){
+
+                const force =
+                    (1 - d/radius) *
+                    1.5;
+
+
+                this.vx +=
+                    (dx / (d || 1)) *
+                    force;
+
+
+                this.vy +=
+                    (dy / (d || 1)) *
+                    force;
+
+            }
+
+        }
+
+
+        /* ======================================
+           DAMPING
+        ====================================== */
+
+        this.vx *= .82;
+        this.vy *= .82;
+
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+
+        /* ======================================
+           VERY SMALL MOTION
+        ====================================== */
+
+        this.x +=
+            Math.sin(
+                performance.now() *
+                .001 +
+                this.seed
+            ) * .008;
+
+
+        this.y +=
+            Math.cos(
+                performance.now() *
+                .0012 +
+                this.seed
+            ) * .008;
+
+    }
+
+
+    draw(){
+
+        ctx.beginPath();
+
+        ctx.arc(
+            this.x,
+            this.y,
+            this.size,
+            0,
+            Math.PI * 2
+        );
+
+
+        ctx.fillStyle =
+            `rgba(
+                255,
+                145,
+                45,
+                ${this.alpha}
+            )`;
+
+
+        ctx.fill();
+
+    }
+
+}
+
+
+/* =====================================================
+   CREATE PARTICLES
+===================================================== */
+
+for(
+    let i = 0;
+    i < PARTICLE_COUNT;
+    i++
+){
+
+    particles.push(
+        new Particle(i)
+    );
+}
+
+
+/* =====================================================
+   MEDIAPIPE
+===================================================== */
+
+const hands =
+    new Hands({
+
+        locateFile:function(file){
+
+            return (
+                "https://cdn.jsdelivr.net/npm/" +
+                "@mediapipe/hands/" +
+                file
+            );
+        }
+    });
+
+
+hands.setOptions({
+
+    maxNumHands:1,
+
+    modelComplexity:0,
+
+    minDetectionConfidence:.40,
+
+    minTrackingConfidence:.40
+
+});
+
+
+/* =====================================================
+   DISTANCE
+===================================================== */
+
+function distance(a,b){
+
+    const dx =
+        a.x - b.x;
+
+    const dy =
+        a.y - b.y;
+
+
+    return Math.sqrt(
+        dx*dx + dy*dy
+    );
+}
+
+
+/* =====================================================
+   GESTURE DETECTION
+===================================================== */
+
+function detectGesture(hand){
+
+    const palm =
+        distance(
+            hand[0],
+            hand[9]
+        );
+
+
+    function open(tip){
+
+        return (
+            distance(
+                hand[0],
+                hand[tip]
+            )
+            >
+            palm * 1.48
+        );
+    }
+
+
+    const index =
+        open(8);
+
+    const middle =
+        open(12);
+
+    const ring =
+        open(16);
+
+    const pinky =
+        open(20);
+
+
+    const count =
+        [
+            index,
+            middle,
+            ring,
+            pinky
+        ].filter(Boolean).length;
+
+
+    /* 1 FINGER */
+
+    if(
+        index &&
+        !middle &&
+        !ring &&
+        !pinky
+    ){
+
+        return "HEART";
+    }
+
+
+    /* 2 FINGER */
+
+    if(
+        index &&
+        middle &&
+        !ring &&
+        !pinky
+    ){
+
+        return "I MISSS YOU";
+    }
+
+
+    /* OPEN PALM */
+
+    if(
+        count >= 4
+    ){
+
+        return "I LOVE YOU";
+    }
+
+
+    /* FIST */
+
+    if(
+        count === 0
+    ){
+
+        return "JEDUD";
+    }
+
+
+    return null;
+}
+
+
+/* =====================================================
+   MEDIAPIPE RESULTS
+===================================================== */
+
+hands.onResults(
+    function(results){
+
+        /* ==========================================
+           NO HAND
+        ========================================== */
+
+        if(
+            !results.multiHandLandmarks ||
+            results.multiHandLandmarks.length === 0
+        ){
+
+            handDetected =
+                false;
+
+
+            status.innerText =
+                "NO HAND";
+
+
+            gestureLabel.innerText =
+                "PARTICLES SPREAD";
+
+
+            lastGesture =
+                null;
+
+            gestureFrames =
+                0;
+
+
+            return;
+        }
+
+
+        /* ==========================================
+           HAND FOUND
+        ========================================== */
+
+        handDetected =
+            true;
+
+
+        const hand =
+            results.multiHandLandmarks[0];
+
+
+        /*
+           Telapak tangan
+        */
+
+        const palm =
+            hand[9];
+
+
+        targetHandX =
+            (1 - palm.x) * W;
+
+        targetHandY =
+            palm.y * H;
+
+
+        handX +=
+            (
+                targetHandX -
+                handX
+            ) * .65;
+
+
+        handY +=
+            (
+                targetHandY -
+                handY
+            ) * .65;
+
+
+        /* ==========================================
+           GESTURE
+        ========================================== */
+
+        const gesture =
+            detectGesture(hand);
+
+
+        status.innerText =
+            "HAND DETECTED";
+
+
+        if(!gesture){
+            return;
+        }
+
+
+        if(
+            gesture ===
+            lastGesture
+        ){
+
+            gestureFrames++;
+
+        }
+
+        else{
+
+            lastGesture =
+                gesture;
+
+            gestureFrames =
+                1;
+
+        }
+
+
+        if(
+            gestureFrames >=
+            REQUIRED_FRAMES
+        ){
+
+            const now =
+                performance.now();
+
+
+            if(
+                now -
+                lastShapeChange >
+                SHAPE_COOLDOWN
+            ){
+
+                if(
+                    currentShape !==
+                    gesture
+                ){
+
+                    setShape(
+                        gesture
+                    );
+
+
+                    lastShapeChange =
+                        now;
+                }
+            }
+        }
+
+    }
+);
+
+
+/* =====================================================
+   CAMERA
+===================================================== */
+
+async function startCamera(){
+
+    try{
+
+        const stream =
+            await navigator
+            .mediaDevices
+            .getUserMedia({
+
+                video:{
+                    width:{
+                        ideal:1280
+                    },
+
+                    height:{
+                        ideal:720
+                    },
+
+                    facingMode:"user"
+                },
+
+                audio:false
+
+            });
+
+
+        video.srcObject =
+            stream;
+
+
+        await video.play();
+
+
+        status.innerText =
+            "CAMERA READY";
+
+
+        async function process(){
+
+            if(
+                video.readyState >= 2
+            ){
+
+                try{
+
+                    await hands.send({
+                        image:video
+                    });
+
+                }
+
+                catch(error){
+
+                    console.error(
+                        error
+                    );
+
+                }
+            }
+
+
+            requestAnimationFrame(
+                process
+            );
+        }
+
+
+        process();
+
+    }
+
+    catch(error){
+
+        console.error(
+            error
+        );
+
+
+        status.innerText =
+            "CAMERA ERROR";
+
+
+        alert(
+            "Kamera tidak dapat digunakan. " +
+            "Izinkan akses kamera di Chrome."
+        );
+
+    }
+}
+
+
+startCamera();
+
+
+/* =====================================================
+   ANIMATION
+===================================================== */
+
+function animate(){
+
+    requestAnimationFrame(
+        animate
+    );
+
+
+    /*
+       Clear screen
+    */
+
+    ctx.fillStyle =
+        "rgba(0,0,0,.35)";
+
+
+    ctx.fillRect(
+        0,
+        0,
+        W,
+        H
+    );
+
+
+    /*
+       Particle
+    */
+
+    for(
+        const particle
+        of particles
+    ){
+
+        particle.update();
+
+        particle.draw();
+
+    }
+
+}
+
+
+animate();
+
+</script>
+
+</body>
+</html>
